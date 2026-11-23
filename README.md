@@ -9,8 +9,6 @@
 
 VGSP (Variance-Guided Scalar Projection) uses a **bounded Class-Variance Ratio (CVR)** to rank input features, compute normalized nonnegative projection weights, and map multidimensional numerical observations onto **one scalar feature**. It originated in research on lightweight DDoS detection for Software-Defined Networks (SDN), but can be applied to suitable binary-labelled tabular datasets.
 
-VGSP is **supervised** (unlike PCA): training requires `fit(X, y)`. It is a transformer, **not** a pretrained DDoS detector.
-
 ## Quick Start
 
 Install the published package:
@@ -72,19 +70,19 @@ The research evaluation protocol uses a stratified 80:20 development/hold-out sp
 
 For each feature *j* in a binary-labelled training dataset, let *p₀*, *p₁* be class proportions, *μ₀ⱼ*, *μ₁ⱼ* class means and *v₀ⱼ*, *v₁ⱼ* population variances:
 
-\[
+```math
 W_j = p_0 v_{0,j} + p_1 v_{1,j}, \qquad
 B_j = p_0 p_1 (\mu_{0,j}-\mu_{1,j})^2
-\]
+```
 
-\[
+```math
 \mathrm{CVR}_j = \frac{B_j}{B_j+W_j+\varepsilon},\qquad
 w_j = \frac{\mathrm{CVR}_j}{\sum_{i \in S_k} \mathrm{CVR}_i+\varepsilon}
-\]
+```
 
-\[
+```math
 z = X_{\mathrm{scaled},S_k}w
-\]
+```
 
 Here, *Sₖ* denotes the top-*k* features ranked by CVR; `epsilon=1e-10` by default. CVR is a bounded monotonic reformulation related to the classical Fisher score. **The research contribution is the CVR-guided scalar projection workflow**, not a claim that the CVR ratio alone is a new standalone mathematical criterion. This is a nonnegative weighted projection, not an optimal signed discriminant direction.
 

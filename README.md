@@ -172,7 +172,10 @@ For research use, cite the relevant version of VGSP together with the associated
 
 **Existing research archive:** https://doi.org/10.5281/zenodo.24183611
 
-**Associated manuscript:** Mokti, M. A., Abu Bakar, K. A., and Zainol Ariffin, K. A. *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks* (manuscript under revision; add journal DOI once published).
+**Associated manuscript:** 
+```text
+Mokti, M. A., Abu Bakar, K. A., and Zainol Ariffin, K. A. *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks* (manuscript under revision; add journal DOI once published).
+```
 
 Please cite the original InSDN and DDOSDN2025 sources when using these datasets.
 

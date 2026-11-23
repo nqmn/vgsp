@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vgsp"
-version = "0.1.0"
-description = "Variance-Guided Scalar Projection (VGSP)"
+version = "0.1.1"
+description = "Supervised variance-guided scalar projection using bounded class-variance ratios"
 readme = "PYPI_README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"

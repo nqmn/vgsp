@@ -1,119 +1,189 @@
-# Variance-Guided Scalar Projection (VGSP)
+# VGSP — Variance-Guided Scalar Projection
 
-**Python implementation for lightweight DDoS detection in Software-Defined Networks**
-
+[![PyPI](https://img.shields.io/pypi/v/vgsp.svg)](https://pypi.org/project/vgsp/)
+[![Python](https://img.shields.io/pypi/pyversions/vgsp.svg)](https://pypi.org/project/vgsp/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24183611.svg)](https://doi.org/10.5281/zenodo.24183611)
 
-This repository contains `vgspv4.ipynb`, a Jupyter Notebook implementing **Variance-Guided Scalar Projection (VGSP)** for binary classification of normal and Distributed Denial-of-Service (DDoS) traffic in Software-Defined Networks (SDN). The notebook accompanies the research manuscript *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks*.
+**A lightweight, scikit-learn-compatible supervised feature transformer for one-dimensional representation.**
 
-VGSP derives feature weights using a bounded **Class-Variance Ratio (CVR)** criterion and projects multiple traffic features onto a **single scalar representation** before classification. The research contribution is the CVR-guided scalar projection workflow, rather than treating the bounded CVR transformation in isolation as a new general-purpose separability metric.
+VGSP (Variance-Guided Scalar Projection) uses a **bounded Class-Variance Ratio (CVR)** to rank input features, compute normalized nonnegative projection weights, and map multidimensional numerical observations onto **one scalar feature**. It originated in research on lightweight DDoS detection for Software-Defined Networks (SDN), but can be applied to suitable binary-labelled tabular datasets.
 
-## Research code and archive
+VGSP is **supervised** (unlike PCA): training requires `fit(X, y)`. It is a transformer, **not** a pretrained DDoS detector.
 
-- **Notebook:** [`vgspv4.ipynb`](vgspv4.ipynb)
-- **Archived software DOI (Zenodo):** https://doi.org/10.5281/zenodo.24183611
-- **Version represented here:** v4 (notebook last-update note: 13 November 2026)
-- **Implementation:** Python / Jupyter Notebook
+## Quick Start
 
-For scholarly citations, cite the version archived on **Zenodo** using the DOI above. The GitHub repository is intended for code access and future development; a subsequently updated GitHub file may differ from the archived Zenodo version.
+Install the published package:
 
-## Method overview
+```bash
+pip install vgsp
+```
 
-For each feature \(j\), the implementation calculates within-class variance \(W_j\) and between-class variance \(B_j\), then computes
+```python
+from vgsp import VGSP
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+
+X, y = make_classification(
+    n_samples=500, n_features=12, n_informative=8,
+    n_redundant=2, random_state=42
+)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.20, stratify=y, random_state=42
+)
+
+vgsp = VGSP(n_features=7)
+Z_train = vgsp.fit_transform(X_train, y_train)  # (400, 1)
+Z_test = vgsp.transform(X_test)                 # (100, 1)
+
+print(vgsp.selected_input_indices_)
+print(vgsp.weights_)
+```
+
+## Features
+
+| Capability | Description |
+| --- | --- |
+| Supervised 1D projection | Maps selected top-*k* numeric features to a single scalar |
+| Bounded CVR | Uses between-class and within-class variance to rank features |
+| Train-only preprocessing | Median imputation, zero-variance filtering, and min-max scaling learned in `fit()` |
+| Leakage-aware usage | `transform()` reuses frozen training estimates; integrates with `Pipeline` |
+| scikit-learn interface | `fit`, `transform`, `fit_transform`, and `get_feature_names_out` |
+| Model-agnostic | Suitable for downstream classifiers such as DT, RF, or logistic regression |
+
+### Use VGSP in a scikit-learn Pipeline
+
+```python
+from sklearn.pipeline import Pipeline
+from sklearn.tree import DecisionTreeClassifier
+from vgsp import VGSP
+
+model = Pipeline([
+    ("vgsp", VGSP(n_features=7)),
+    ("classifier", DecisionTreeClassifier(random_state=42)),
+])
+model.fit(X_train, y_train)
+print(model.score(X_test, y_test))
+```
+
+The research evaluation protocol uses a stratified 80:20 development/hold-out split and 5-fold `StratifiedKFold` on the development portion. Use a `Pipeline` in each fold so all preprocessing, CVR estimates, rankings and weights are fitted on **training data only**. The transformer does not automatically choose the optimal *k*.
+
+## How VGSP Works
+
+For each feature *j* in a binary-labelled training dataset, let *p₀*, *p₁* be class proportions, *μ₀ⱼ*, *μ₁ⱼ* class means and *v₀ⱼ*, *v₁ⱼ* population variances:
 
 \[
-\operatorname{CVR}(j)=\frac{B_j}{B_j+W_j+\varepsilon}, \qquad \varepsilon=10^{-10}.
+W_j = p_0 v_{0,j} + p_1 v_{1,j}, \qquad
+B_j = p_0 p_1 (\mu_{0,j}-\mu_{1,j})^2
 \]
 
-The highest-ranked features receive CVR-proportional projection weights. Their weighted combination produces a one-dimensional scalar \(z\), which is passed to a machine-learning classifier.
+\[
+\mathrm{CVR}_j = \frac{B_j}{B_j+W_j+\varepsilon},\qquad
+w_j = \frac{\mathrm{CVR}_j}{\sum_{i \in S_k} \mathrm{CVR}_i+\varepsilon}
+\]
 
-The notebook includes:
+\[
+z = X_{\mathrm{scaled},S_k}w
+\]
 
-- Binary dataset loading and inspection, with duplicate-vector diagnostics.
-- Stratified **80:20 development/test splitting** and **five-fold `StratifiedKFold`** evaluation.
-- Training-fitted median imputation, zero-variance filtering where applicable, min-max scaling, CVR computation, feature ranking, and scalar projection.
-- Feature-count ablation for **\(k=1,\ldots,12\)** using InSDN development-fold Macro-F1.
-- Sensitivity analyses for `Protocol` encoding and correlated features.
-- Comparisons with full-feature, variance-threshold, Fisher-score, PCA-1D, and LDA-1D baselines.
-- Evaluation with Decision Tree (DT), Random Forest (RF), XGBoost (XGB), and LightGBM (LGBM).
-- Predictive metrics, computational timings, paired Wilcoxon comparisons, visualization, and Decision Tree complexity analysis.
+Here, *Sₖ* denotes the top-*k* features ranked by CVR; `epsilon=1e-10` by default. CVR is a bounded monotonic reformulation related to the classical Fisher score. **The research contribution is the CVR-guided scalar projection workflow**, not a claim that the CVR ratio alone is a new standalone mathematical criterion. This is a nonnegative weighted projection, not an optimal signed discriminant direction.
 
-### Evaluation scope
+## API at a Glance
 
-In the archived v4 notebook, the InSDN development cross-validation selects **seven traffic features**: `Protocol`, `Down/Up Ratio`, `Init Bwd Win Byts`, `Pkt Len Min`, `ACK Flag Cnt`, `Bwd Pkt Len Min`, and `Bwd Pkts/s`. The selected **feature names** are then evaluated on DDOSDN2025 with dataset-specific preprocessing, CVR weights, and classifiers fitted from that dataset's own training partitions. **This is within-dataset evaluation, not a train-on-InSDN/test-on-DDOSDN2025 transfer experiment.**
+| API | Description |
+| --- | --- |
+| `VGSP(n_features=7, epsilon=1e-10)` | Initialize transformer |
+| `.fit(X, y)` | Learn imputer, variance filter, scaler, CVR, ranking and weights |
+| `.transform(X)` | Return frozen 1D projection for new data |
+| `.fit_transform(X, y)` | Fit and transform training data |
+| `.cvr_scores_` | CVR scores of retained features |
+| `.selected_input_indices_` | Selected indices in original input feature space |
+| `.selected_feature_names_` | Selected feature names for suitably named DataFrames |
+| `.weights_` | Normalized projection weights |
 
-The notebook uses stratified splitting, **not group-aware cross-validation**. Duplicate-vector hashes are calculated for diagnostic purposes; they are not used to create the folds. Fitted preprocessing and VGSP parameters are estimated from the appropriate training partition and applied unchanged to its validation or held-out test partition.
+See [the PyPI package documentation](https://pypi.org/project/vgsp/) for complete usage and API examples.
 
-## Requirements
+## Research Notebook and Reproducibility
 
-- Python 3.12 (notebook metadata records Python 3.12.3)
-- JupyterLab or Jupyter Notebook
-- NumPy, pandas, SciPy, scikit-learn, matplotlib, seaborn, XGBoost, LightGBM, joblib, threadpoolctl, and IPython
+The repository also includes [`vgspv4.ipynb`](vgspv4.ipynb), the research notebook accompanying the manuscript *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks*.
 
-Exact package versions are not pinned in the notebook. For precise environment-level reproduction, record the versions used in your own execution environment.
+- **Archived research software DOI:** [10.5281/zenodo.24183611](https://doi.org/10.5281/zenodo.24183611)
+- **Research notebook version:** v4 (last-update note: 13 November 2026)
+- **Notebook execution environment:** Python 3.12 with additional scientific, visualization and classifier dependencies (including pandas, SciPy, XGBoost and LightGBM)
+- **Library installation requirement:** Python 3.10+, NumPy 1.24+, scikit-learn 1.6 to below 2.0
 
-## Datasets and file paths
+### Dataset inputs
 
-The notebook requires **two previously prepared binary CSV files** (labels: `0` = Normal, `1` = DDoS):
+The notebook expects **prepared binary CSV files** (not raw dataset downloads). The inputs are not distributed with the Python package.
 
-| Dataset | Expected CSV filename | Records in notebook | Numeric features used |
+| Dataset | Expected input file | Rows in notebook | Numeric features used |
 | --- | --- | ---: | ---: |
 | InSDN | `insdn_ddos_binary_0n1d.csv` | 190,366 | 77 |
 | DDOSDN2025 | `ddosdn2025_binary_0n1d.csv` | 200,378 | 77 |
 
-**Before running the notebook, check or change `INSDN_PATH` and `DDOSDN_PATH` in the first configuration code cell.** The original settings are:
+Adjust `INSDN_PATH` and `DDOSDN_PATH` in the notebook to match local file locations.
 
-```python
-INSDN_PATH = Path("../ds/insdn_ddos_binary_0n1d.csv")
-DDOSDN_PATH = Path("../ds/ddosdn2025_binary_0n1d.csv")
+**Evaluation boundaries:** The notebook uses a stratified 80:20 hold-out split and five-fold `StratifiedKFold`, **not group-aware cross-validation**. Fitted preprocessing and CVR/weights are estimated on training partitions only. InSDN development experiments select seven features: `Protocol`, `Down/Up Ratio`, `Init Bwd Win Byts`, `Pkt Len Min`, `ACK Flag Cnt`, `Bwd Pkt Len Min`, and `Bwd Pkts/s`. In the DDOSDN2025 evaluation, the **feature names** are carried over but its preprocessing, projection weights and classifiers are independently fitted to the training portion of that dataset. **This does not constitute train-on-InSDN/test-on-DDOSDN2025 transfer evaluation.**
+
+Dataset references:
+
+1. Elsayed, M. S., Le-Khac, N.-A., and Jurcut, A. D. (2020). *InSDN: A Novel SDN Intrusion Dataset*. *IEEE Access*, 8, 165263–165284. https://doi.org/10.1109/ACCESS.2020.3022633
+2. Mokti, M. A. (2025). *DDOSDN2025*. Mendeley Data. https://doi.org/10.17632/9c5yjbk354.1
+
+### Limitations
+
+- The packaged transformer supports numeric, **binary-labelled** inputs; not multiclass labels.
+- The `Protocol` field's numerical coding is a research assumption, not a general recommendation to treat nominal categories as continuous.
+- Stratified CV may retain dependencies among records sharing attack sessions, capture conditions, hosts, or identical traffic vectors.
+- The package does not include flow capture/extraction, attack mitigation, a pretrained model or a guarantee of detection accuracy.
+- Classification timing for a precomputed representation is **not** equivalent to full packet-capture-to-controller latency.
+- The repository DOI above archives a research notebook snapshot. A later PyPI package release should be archived separately for a version-specific software DOI if cited independently.
+
+## Development
+
+```bash
+git clone https://github.com/nqmn/vgsp.git
+cd vgsp
+python -m pip install -e ".[dev]"
+python -m pytest -q
+python examples/basic_usage.py
+python -m build
+python -m twine check dist/*
 ```
 
-If launching Jupyter from the repository directory, those settings correspond to the following example layout:
+## Project Structure
 
 ```text
-workspace/
-├── ds/
-│   ├── insdn_ddos_binary_0n1d.csv
-│   └── ddosdn2025_binary_0n1d.csv
-└── VGSP/
-    ├── README.md
-    └── vgspv4.ipynb
+vgsp/
+├── pyproject.toml
+├── README.md                  # GitHub overview and research provenance
+├── PYPI_README.md             # Description published on PyPI
+├── LICENSE
+├── src/vgsp/
+│   ├── __init__.py
+│   └── _vgsp.py
+├── tests/test_vgsp.py
+├── examples/basic_usage.py
+├── vgspv4.ipynb
+└── .github/workflows/publish-pypi.yml
 ```
-
-Alternatively, place the CSV files in a local `data/` directory inside the repository and change the two paths to `Path("data/<filename>.csv")` accordingly. Relative paths are interpreted from **the Jupyter process working directory**, not necessarily from the notebook file's directory.
-
-**Important:** The inputs are prepared *binary* CSVs, not necessarily the original raw dataset downloads. This notebook does not itself reconstruct those CSVs from the complete source datasets. Ensure that the files, labels, feature columns, and preprocessing match the research inputs before interpreting results. Data files are separately licensed by their original providers; the software license does not replace dataset licensing terms.
-
-Dataset sources:
-
-1. **InSDN:** Elsayed, M. S., Le-Khac, N.-A., and Jurcut, A. D. (2020), *InSDN: A Novel SDN Intrusion Dataset*, **IEEE Access**, 8, 165263–165284. https://doi.org/10.1109/ACCESS.2020.3022633
-2. **DDOSDN2025:** Mokti, M. A. (2025), *DDOSDN2025*, Mendeley Data, Version 1. https://doi.org/10.17632/9c5yjbk354.1
-
-## Limitations and reproducibility notes
-
-- Experiments assess **binary Normal versus DDoS classification** on the specified, prepared datasets.
-- The principal validation protocol is stratified and may not eliminate dependence among records sharing capture sessions, hosts, or identical feature vectors.
-- The reported computational measurements are notebook-based experiments; they do not establish full packet-capture-to-controller operational latency.
-- Results depend on input-data preparation, package versions, hardware, and execution environment. The presence of code in this repository does not by itself guarantee exact numerical reproduction on other systems.
-- The uploaded v4 notebook uses **seven** selected features. Ensure that the associated manuscript, Zenodo version, and GitHub notebook describe the same released experiment.
 
 ## Citation
 
-**Software** (confirm the exact author, title, and version against the published Zenodo citation metadata):
+For research use, cite the relevant version of VGSP together with the associated manuscript where applicable. The current Zenodo DOI points to the **notebook research archive**, not necessarily the identical source tree of the PyPI release.
 
-> Mokti, M. A. (2026). *Variance-Guided Scalar Projection (VGSP): Python Implementation for Lightweight DDoS Detection in Software-Defined Networks* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.24183611
+**Existing research archive:** https://doi.org/10.5281/zenodo.24183611
 
-**Associated manuscript:**
+**Associated manuscript:** Mokti, M. A., Abu Bakar, K. A., and Zainol Ariffin, K. A. *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks* (manuscript under revision; add journal DOI once published).
 
-> Mokti, M. A., Abu Bakar, K. A., and Zainol Ariffin, K. A. *A Variance-Guided Scalar Traffic Representation for Lightweight DDoS Detection in Software-Defined Networks*. Manuscript under revision; journal DOI not yet included in this repository.
-
-Please cite the original InSDN and DDOSDN2025 sources when using those datasets.
+Please cite the original InSDN and DDOSDN2025 sources when using these datasets.
 
 ## License
 
-Use the **same software license** in GitHub and the Zenodo record. If you selected **MIT** in Zenodo, add a `LICENSE` file containing the MIT License text and the appropriate copyright holder(s) to this repository. Dataset licenses remain separate from the code license.
+This repository is distributed under the **Apache License 2.0**; see [LICENSE](LICENSE). Dataset licensing is independent of the package license.
 
-## Contact
+## Project Links
 
-**Mohd Adil Mokti**  
-Center for Cyber Security, Faculty of Information Science and Technology, Universiti Kebangsaan Malaysia, Malaysia.
+- [PyPI: vgsp](https://pypi.org/project/vgsp/)
+- [GitHub source and issues](https://github.com/nqmn/vgsp)
+- [Research notebook archive (Zenodo)](https://doi.org/10.5281/zenodo.24183611)
